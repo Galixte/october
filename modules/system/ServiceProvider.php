@@ -6,7 +6,7 @@ use Event;
 use Config;
 use Backend;
 use Request;
-use DbDongle;
+use Validator;
 use BackendMenu;
 use BackendAuth;
 use Twig_Environment;
@@ -21,6 +21,7 @@ use System\Twig\Extension as TwigExtension;
 use System\Models\EventLog;
 use System\Models\MailSettings;
 use System\Models\MailTemplate;
+use System\Classes\CombineAssets;
 use Backend\Classes\WidgetManager;
 use October\Rain\Support\ModuleServiceProvider;
 use October\Rain\Router\Helper as RouterHelper;
@@ -50,6 +51,8 @@ class ServiceProvider extends ModuleServiceProvider
         $this->registerTwigParser();
         $this->registerMailer();
         $this->registerMarkupTags();
+        $this->registerAssetBundles();
+        $this->registerValidator();
 
         /*
          * Register other module providers
@@ -60,13 +63,15 @@ class ServiceProvider extends ModuleServiceProvider
             }
         }
 
-        // Disabled for now
-        // if (App::runningInBackend()) {
+        /*
+         * Backend specific
+         */
+        if (App::runningInBackend()) {
             $this->registerBackendNavigation();
             $this->registerBackendReportWidgets();
             $this->registerBackendPermissions();
             $this->registerBackendSettings();
-        // }
+        }
     }
 
     /**
@@ -238,7 +243,7 @@ class ServiceProvider extends ModuleServiceProvider
     protected function registerLogging()
     {
         Event::listen('illuminate.log', function ($level, $message, $context) {
-            if (DbDongle::hasDatabase() && !defined('OCTOBER_NO_EVENT_LOGGING')) {
+            if (EventLog::useLogging()) {
                 EventLog::add($message, $level);
             }
         });
@@ -431,4 +436,39 @@ class ServiceProvider extends ModuleServiceProvider
             ]);
         });
     }
+
+    /**
+     * Register asset bundles
+     */
+    protected function registerAssetBundles()
+    {
+        /*
+         * Register asset bundles
+         */
+        CombineAssets::registerCallback(function($combiner) {
+            $combiner->registerBundle('~/modules/system/assets/less/styles.less');
+            $combiner->registerBundle('~/modules/system/assets/ui/storm.less');
+            $combiner->registerBundle('~/modules/system/assets/ui/storm.js');
+        });
+    }
+
+    /**
+     * Extends the validator with custom rules
+     */
+    protected function registerValidator()
+    {
+        /*
+         * Allowed file extensions, as opposed to mime types.
+         * - extensions: png,jpg,txt
+         */
+        Validator::extend('extensions', function($attribute, $value, $parameters) {
+            $extension = $value->getClientOriginalExtension();
+            return in_array($extension, $parameters);
+        });
+
+        Validator::replacer('extensions', function($message, $attribute, $rule, $parameters) {
+            return strtr($message, [':values' => implode(', ', $parameters)]);
+        });
+    }
+
 }
